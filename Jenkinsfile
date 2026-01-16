@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // Environment variables
-        GIT_REPO = 'git@github.com-jagoankode:jagoankode/next_jenkins.git'
+        GIT_REPO = 'git@github.com:jagoankode/next_jenkins.git'
         DOCKER_REGISTRY = 'localhost:8002'
         DOCKER_IMAGE_NAME = 'jenkins-next-app'
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
