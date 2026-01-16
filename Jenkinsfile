@@ -2,13 +2,11 @@ pipeline {
     agent any
 
     environment {
-        // Environment variables
         GIT_REPO = 'git@github.com:jagoankode/next_jenkins.git'
         DOCKER_REGISTRY = 'localhost:8002'
         DOCKER_IMAGE_NAME = 'jenkins-next-app'
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         NODE_ENV = 'production'
-        APP_VERSION = readJSON(file: 'package.json').version
     }
 
     options {
@@ -27,6 +25,16 @@ pipeline {
                         branches: [[name: '*/main']],
                         userRemoteConfigs: [[url: "${GIT_REPO}"]]
                     ])
+                }
+            }
+        }
+
+        stage('Read Version from package.json') {
+            steps {
+                script {
+                    def packageJson = readJSON file: 'package.json'
+                    env.APP_VERSION = packageJson.version
+                    echo "Detected app version: ${env.APP_VERSION}"
                 }
             }
         }
@@ -66,11 +74,11 @@ pipeline {
             steps {
                 script {
                     echo "=== Building Docker Image ==="
-                    sh '''
+                    sh """
                         docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
                         docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest
-                        docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:v${APP_VERSION}
-                    '''
+                        docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:v${env.APP_VERSION}
+                    """
                 }
             }
         }
@@ -82,12 +90,12 @@ pipeline {
             steps {
                 script {
                     echo "=== Pushing Docker Image to Registry ==="
-                    sh '''
+                    sh """
                         docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
                         docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest
-                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:v${APP_VERSION}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:v${env.APP_VERSION}
                         echo "✓ Images pushed to ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}"
-                    '''
+                    """
                 }
             }
         }
@@ -105,10 +113,10 @@ pipeline {
                         # docker-compose -f docker-compose.yml up -d
 
                         # Option 2: Kubernetes
-                        # kubectl set image deployment/next-app next-app=${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+                        # kubectl set image deployment/next-app next-app='${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}'
 
                         # Option 3: SSH Deploy
-                        # ssh user@server 'cd /app && docker pull ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} && docker-compose up -d'
+                        # ssh user@server 'cd /app && docker pull '${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}' && docker-compose up -d'
 
                         echo "Deployment configuration needed"
                     '''
@@ -122,13 +130,13 @@ pipeline {
             }
             steps {
                 script {
-                    echo "=== Creating Git Tag v${APP_VERSION} ==="
-                    sh '''
+                    echo "=== Creating Git Tag v${env.APP_VERSION} ==="
+                    sh """
                         git config user.email "jenkins@example.com"
                         git config user.name "Jenkins CI"
-                        git tag -a v${APP_VERSION} -m "Release version ${APP_VERSION}"
-                        git push origin v${APP_VERSION}
-                    '''
+                        git tag -a v${env.APP_VERSION} -m "Release version ${env.APP_VERSION}"
+                        git push origin v${env.APP_VERSION}
+                    """
                 }
             }
         }
@@ -145,12 +153,10 @@ pipeline {
 
         success {
             echo "✓ Pipeline completed successfully"
-            // Bisa tambahkan notifikasi email atau Slack di sini
         }
 
         failure {
             echo "✗ Pipeline failed"
-            // Bisa tambahkan notifikasi email atau Slack di sini
         }
 
         unstable {
