@@ -1,5 +1,10 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'node:18-alpine'
+            args '-u root -v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     environment {
         GIT_REPO = 'git@github.com:jagoankode/next_jenkins.git'
@@ -7,119 +12,85 @@ pipeline {
         DOCKER_IMAGE_NAME = 'jenkins-next-app'
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         NODE_ENV = 'production'
+        // APP_VERSION akan di-set dinamis
     }
 
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 30, unit: 'MINUTES')
-        timestamps()
+        // timestamps() dihapus — tidak diperlukan di pipeline modern
     }
 
     stages {
         stage('Checkout') {
             steps {
-                script {
-                    echo "=== Checkout Source Code from ${GIT_REPO} ==="
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: '*/main']],
-                        userRemoteConfigs: [[url: "${GIT_REPO}"]]
-                    ])
-                }
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: '*/main']],
+                    userRemoteConfigs: [[url: "${env.GIT_REPO}"]]
+                ])
             }
         }
 
         stage('Read Version from package.json') {
             steps {
                 script {
-                    def packageJson = readJSON file: 'package.json'
-                    env.APP_VERSION = packageJson.version
-                    echo "Detected app version: ${env.APP_VERSION}"
+                    // Gunakan Node.js bawaan image Docker
+                    env.APP_VERSION = sh(
+                        script: 'node -p "require(\'./package.json\').version"',
+                        returnStdout: true
+                    ).trim()
+                    echo "📦 Detected app version: ${env.APP_VERSION}"
                 }
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                script {
-                    echo "=== Installing Dependencies ==="
-                    sh '''
-                        node --version
-                        yarn --version
-                        yarn install --frozen-lockfile
-                    '''
-                }
+                sh 'yarn install --frozen-lockfile'
             }
         }
 
         stage('Lint') {
             steps {
-                script {
-                    echo "=== Running ESLint ==="
-                    sh 'yarn lint || true'
-                }
+                sh 'yarn lint || echo "⚠️ Linting skipped or failed (non-blocking)"'
             }
         }
 
-        stage('Build') {
+        stage('Build Next.js') {
             steps {
-                script {
-                    echo "=== Building Next.js Application ==="
-                    sh 'yarn build'
-                }
+                sh 'yarn build'
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo "=== Building Docker Image ==="
+                    def fullImage = "${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:${env.DOCKER_IMAGE_TAG}"
+                    def latestImage = "${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:latest"
+                    def versionedImage = "${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:v${env.APP_VERSION}"
+
                     sh """
-                        docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} .
-                        docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest
-                        docker tag ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:v${env.APP_VERSION}
+                        docker build -t ${fullImage} .
+                        docker tag ${fullImage} ${latestImage}
+                        docker tag ${fullImage} ${versionedImage}
                     """
                 }
             }
         }
 
-        stage('Push to Registry') {
+        stage('Push to Docker Registry') {
             when {
                 branch 'main'
             }
             steps {
                 script {
-                    echo "=== Pushing Docker Image to Registry ==="
                     sh """
-                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
-                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:latest
-                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:v${env.APP_VERSION}
-                        echo "✓ Images pushed to ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}"
+                        docker push ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:${env.DOCKER_IMAGE_TAG}
+                        docker push ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:latest
+                        docker push ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:v${env.APP_VERSION}
                     """
-                }
-            }
-        }
-
-        stage('Deploy') {
-            when {
-                branch 'main'
-            }
-            steps {
-                script {
-                    echo "=== Deploying Application ==="
-                    sh '''
-                        # Uncomment dan sesuaikan dengan deployment method Anda
-                        # Option 1: Docker Compose
-                        # docker-compose -f docker-compose.yml up -d
-
-                        # Option 2: Kubernetes
-                        # kubectl set image deployment/next-app next-app='${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}'
-
-                        # Option 3: SSH Deploy
-                        # ssh user@server 'cd /app && docker pull '${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}' && docker-compose up -d'
-
-                        echo "Deployment configuration needed"
-                    '''
+                    echo "✅ Pushed images to ${env.DOCKER_REGISTRY}"
                 }
             }
         }
@@ -130,13 +101,18 @@ pipeline {
             }
             steps {
                 script {
-                    echo "=== Creating Git Tag v${env.APP_VERSION} ==="
+                    // Konfigurasi Git
+                    sh '''
+                        git config --global user.email "brillianandrie@gmail.com"
+                        git config --global user.name "jagoankode"
+                    '''
+
+                    // Buat dan push tag
                     sh """
-                        git config user.email "jenkins@example.com"
-                        git config user.name "Jenkins CI"
-                        git tag -a v${env.APP_VERSION} -m "Release version ${env.APP_VERSION}"
+                        git tag -a v${env.APP_VERSION} -m "Release v${env.APP_VERSION} (Build #${env.BUILD_NUMBER})"
                         git push origin v${env.APP_VERSION}
                     """
+                    echo "🔖 Created and pushed tag: v${env.APP_VERSION}"
                 }
             }
         }
@@ -145,22 +121,17 @@ pipeline {
     post {
         always {
             script {
-                echo "=== Pipeline Finished ==="
-                // Cleanup
-                sh 'docker image prune -f --filter "until=72h" || true'
+                echo "🧹 Cleaning up Docker images..."
+                sh 'docker image prune -f --filter "until=1h" || true'
             }
         }
 
         success {
-            echo "✓ Pipeline completed successfully"
+            echo "✅ Pipeline completed successfully!"
         }
 
         failure {
-            echo "✗ Pipeline failed"
-        }
-
-        unstable {
-            echo "⚠ Pipeline unstable"
+            echo "❌ Pipeline failed!"
         }
     }
 }
