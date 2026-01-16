@@ -63,20 +63,19 @@ pipeline {
                 sh "docker push ${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:${env.DOCKER_IMAGE_TAG}"
             }
         }
-    }
 
-    post {
-        always {
-            node {
-                echo "🧹 Cleaning docker images"
+        stage('Cleanup Docker') {
+            agent any
+            steps {
                 sh 'docker image prune -f || true'
             }
         }
+    }
 
+    post {
         success {
             echo "✅ Pipeline success"
         }
-
         failure {
             echo "❌ Pipeline failed"
         }
