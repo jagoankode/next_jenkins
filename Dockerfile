@@ -2,9 +2,6 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 
-# Install yarn
-RUN npm install -g yarn
-
 # Install dependencies
 COPY package.json yarn.lock* ./
 RUN yarn install --frozen-lockfile --production
@@ -12,9 +9,6 @@ RUN yarn install --frozen-lockfile --production
 # Build stage
 FROM node:20-alpine AS builder
 WORKDIR /app
-
-# Install yarn
-RUN npm install -g yarn
 
 # Copy dependencies dari stage deps
 COPY --from=deps /app/node_modules ./node_modules
