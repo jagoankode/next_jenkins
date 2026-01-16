@@ -1,17 +1,18 @@
 pipeline {
-    agent {
-        docker {
-            image 'node:18-alpine'
-            args '-u root -v /var/run/docker.sock:/var/run/docker.sock'
-        }
+    agent any
+
+    tools {
+        nodejs 'node18'
     }
 
     environment {
         GIT_REPO = 'git@github.com:jagoankode/next_jenkins.git'
-        GIT_CREDENTIALS = 'github-ssh'   // <-- ID credential Jenkins
+        GIT_CREDENTIALS = 'github-ssh'
+
         DOCKER_REGISTRY = 'localhost:8002'
         DOCKER_IMAGE_NAME = 'jenkins-next-app'
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
+
         NODE_ENV = 'production'
     }
 
@@ -35,33 +36,47 @@ pipeline {
             }
         }
 
-        stage('Read Version from package.json') {
+        stage('Check Environment') {
+            steps {
+                sh '''
+                  echo "=== NODE ==="
+                  node -v
+                  npm -v
+
+                  echo "=== DOCKER ==="
+                  which docker || echo "docker not found"
+                  docker ps || true
+                '''
+            }
+        }
+
+        stage('Read Version') {
             steps {
                 script {
                     env.APP_VERSION = sh(
                         script: 'node -p "require(\'./package.json\').version"',
                         returnStdout: true
                     ).trim()
-                    echo "📦 Detected app version: ${env.APP_VERSION}"
+                    echo "📦 App version: ${env.APP_VERSION}"
                 }
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                sh 'yarn install --frozen-lockfile'
+                sh 'npm ci || yarn install --frozen-lockfile'
             }
         }
 
         stage('Lint') {
             steps {
-                sh 'yarn lint || echo "⚠️ Lint failed (non-blocking)"'
+                sh 'npm run lint || yarn lint || echo "⚠️ Lint skipped"'
             }
         }
 
         stage('Build Next.js') {
             steps {
-                sh 'yarn build'
+                sh 'npm run build || yarn build'
             }
         }
 
@@ -81,7 +96,7 @@ pipeline {
             }
         }
 
-        stage('Push to Docker Registry') {
+        stage('Push Docker Image') {
             when { branch 'main' }
             steps {
                 sh """
@@ -109,20 +124,20 @@ pipeline {
 
         stage('Docker Cleanup') {
             steps {
-                sh 'docker image prune -f --filter "until=1h" || true'
+                sh 'docker image prune -f --filter "until=2h" || true'
             }
         }
     }
 
     post {
         success {
-            echo "✅ Pipeline completed successfully!"
+            echo "✅ Pipeline SUCCESS"
         }
         failure {
-            echo "❌ Pipeline failed!"
+            echo "❌ Pipeline FAILED"
         }
         always {
-            echo "🧹 Pipeline finished (post block without shell)"
+            echo "🏁 Pipeline finished"
         }
     }
 }
