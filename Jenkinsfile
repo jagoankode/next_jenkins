@@ -39,7 +39,6 @@ pipeline {
             steps {
                 sh 'node -v'
                 sh 'npm -v'
-
                 sh 'npm ci'
                 sh 'npm run build'
             }
@@ -67,14 +66,19 @@ pipeline {
     }
 
     post {
+        always {
+            node {
+                echo "🧹 Cleaning docker images"
+                sh 'docker image prune -f || true'
+            }
+        }
+
         success {
             echo "✅ Pipeline success"
         }
+
         failure {
             echo "❌ Pipeline failed"
-        }
-        always {
-            sh 'docker image prune -f || true'
         }
     }
 }
