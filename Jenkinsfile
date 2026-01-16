@@ -1,5 +1,5 @@
 pipeline {
-    agent any
+    agent none
 
     environment {
         GIT_REPO = 'git@github.com:jagoankode/next_jenkins.git'
@@ -16,11 +16,15 @@ pipeline {
     stages {
 
         stage('Checkout') {
+            agent any
             steps {
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: '*/main']],
-                    userRemoteConfigs: [[url: env.GIT_REPO]]
+                    userRemoteConfigs: [[
+                        url: env.GIT_REPO,
+                        credentialsId: 'jenkins_jagoankode'
+                    ]]
                 ])
             }
         }
@@ -42,18 +46,17 @@ pipeline {
         }
 
         stage('Build Docker Image') {
+            agent any
             steps {
                 script {
                     def fullImage = "${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:${env.DOCKER_IMAGE_TAG}"
-
-                    sh """
-                      docker build -t ${fullImage} .
-                    """
+                    sh "docker build -t ${fullImage} ."
                 }
             }
         }
 
         stage('Push Docker Image') {
+            agent any
             when {
                 branch 'main'
             }
