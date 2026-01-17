@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'node:18-alpine'
-            args '-u root -v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
 
     environment {
         GIT_REPO = 'git@github.com:jagoankode/next_jenkins.git'
@@ -13,7 +8,7 @@ pipeline {
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         NODE_ENV = 'production'
     }
-
+    
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 30, unit: 'MINUTES')
@@ -36,13 +31,14 @@ pipeline {
 
         stage('Install Dependencies') {
             steps {
-                sh 'npm ci'
+                sh 'yarn install'
+                sh 'yarn --version'
             }
         }
 
         stage('Build Next.js') {
             steps {
-                sh 'npm run build'
+                sh 'yarn build'
             }
         }
 
