@@ -66,6 +66,8 @@ pipeline {
                     echo "BRANCH_NAME = ${env.BRANCH_NAME}"
                     def currentBranch = env.BRANCH_NAME ?: env.GIT_BRANCH?.replace('origin/', '')
                     echo "Normalized branch = ${currentBranch}"
+                    sh 'git tag -l'  // lihat semua tag lokal
+                    sh 'git ls-remote --tags origin'  // lihat tag di remote
                 }
             }
         }
