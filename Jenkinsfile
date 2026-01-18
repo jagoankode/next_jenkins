@@ -7,6 +7,7 @@ pipeline {
         DOCKER_IMAGE_NAME = 'jenkins-next-app'
         DOCKER_IMAGE_TAG = "${BUILD_NUMBER}"
         NODE_ENV = 'production'
+        GIT_TAG = '' // akan diisi nanti
     }
     
     options {
@@ -48,13 +49,53 @@ pipeline {
                     def fullImage = "${env.DOCKER_REGISTRY}/${env.DOCKER_IMAGE_NAME}:${env.DOCKER_IMAGE_TAG}"
                     sh "docker build -t ${fullImage} ."
                     
-                    // Hanya push jika di branch main
                     if (env.GIT_BRANCH == 'origin/main' || env.BRANCH_NAME == 'main') {
                         sh "docker push ${fullImage}"
                         echo "✅ Pushed image: ${fullImage}"
                     } else {
                         echo "ℹ️ Skipping push (not on main branch)"
                     }
+                }
+            }
+        }
+        
+        stage('Debug Branch') {
+            steps {
+                script {
+                    echo "GIT_BRANCH = ${env.GIT_BRANCH}"
+                    echo "BRANCH_NAME = ${env.BRANCH_NAME}"
+                    def currentBranch = env.BRANCH_NAME ?: env.GIT_BRANCH?.replace('origin/', '')
+                    echo "Normalized branch = ${currentBranch}"
+                }
+            }
+        }
+        
+        stage('Prepare & Push Git Tag') {
+            when {
+                expression {
+                    def branch = env.BRANCH_NAME ?: (env.GIT_BRANCH?.replace('origin/', '') ?: '')
+                    return branch == 'main' && currentBuild.resultIsBetterOrEqualTo('SUCCESS')
+                }
+            }
+            steps {
+                script {
+                    def pkg = readJSON file: 'package.json'
+                    def tag = "v${pkg.version}"
+                    
+                    if (!tag || tag == 'vundefined') {
+                        error("❌ Invalid version in package.json")
+                    }
+
+                    echo "🔖 Creating Git tag: ${tag}"
+                    
+                    sh """
+                        git config user.email "brillianandrie@gmail.com"
+                        git config user.name "jagoankode"
+                        git tag -a ${tag} -m "Release ${tag}"
+                        git push origin ${tag}
+                    """
+                    
+                    echo "✅ Successfully pushed tag: ${tag}"
                 }
             }
         }
